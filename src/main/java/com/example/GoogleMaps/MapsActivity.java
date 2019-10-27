@@ -6,11 +6,14 @@ import androidx.core.content.FileProvider;
 import androidx.fragment.app.FragmentActivity;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.location.Location;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -22,12 +25,19 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.Toast;
 
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
 
 import java.io.File;
 import java.io.IOException;
@@ -44,51 +54,62 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     String mCurrentPhotoPath;
     ImageView imageView;
     File photoFile = null;
-    //private FuseLocationProviderClient client;
+    Bitmap myBitmap;
     static final int CAPTURE_IMAGE_REQUEST = 1;
+    private FusedLocationProviderClient mLocationClient;
+    private Boolean mRequestingLocationUpdates = false;
+    private LocationRequest mLocationRequest;
+    private LocationCallback mLocationCallback;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_maps);
+
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+
+        if(checkLocationPermission()){
+            createLocationRequest();
+            mRequestingLocationUpdates = true;
+        }
+        setContentView(R.layout.activity_maps);
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
-        camera = (Button) findViewById(R.id.button);
+        mLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        mLocationCallback = new LocationCallback();
+        mLocationCallback = new LocationCallback(){
+            public void onLocationResult(LocationResult locationResult){
+                for(Location location: locationResult.getLocations()){
+                    if(mMap != null){
+                        LatLng loc = new LatLng(location.getLatitude(), location.getLongitude());
+                        mMap.moveCamera(CameraUpdateFactory.newLatLng(loc));
+                    }
+                }
+            }
+        };
 
+        camera = (Button) findViewById(R.id.button);
         camera.setOnClickListener(new View.OnClickListener(){
             public void onClick(View view){
-                if(Build.VERSION.SDK_INT >= 23){
-                    captureImage();
-                }
-                else{
-                   // captureImage2();
-                }
+                captureImage();
             }
         });
         imageView = (ImageView) findViewById(R.id.image);
     }
-    /* Capture Image function for 4.4.4 and lower. Not tested for Android Version 3 and 2 */
-    /*private void captureImage2() {
-
-        try {
-            Intent cameraIntent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
-            photoFile = createImageFile4();
-            if(photoFile!=null)
-            {
-                displayMessage(getBaseContext(),photoFile.getAbsolutePath());
-                Log.i("BBBB",photoFile.getAbsolutePath());
-                Uri photoURI  = Uri.fromFile(photoFile);
-                cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI);
-                startActivityForResult(cameraIntent, CAPTURE_IMAGE_REQUEST);
-            }
+    public void onResume(){
+        super.onResume();
+        if(mRequestingLocationUpdates){
+            startLocationUpdates();
         }
-        catch (Exception e)
-        {
-            displayMessage(getBaseContext(),"Camera is not available."+e.toString());
-        }
-    }*/
-
+    }
+    private void startLocationUpdates(){
+        mLocationClient.requestLocationUpdates(mLocationRequest, mLocationCallback, null);
+    }
+    private void createLocationRequest(){
+        mLocationRequest = new LocationRequest();
+        mLocationRequest.setInterval(1000);
+        mLocationRequest.setFastestInterval(5000);
+        mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+    }
     private void captureImage()
     {
 
@@ -119,17 +140,12 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                     displayMessage(getBaseContext(),ex.getMessage().toString());
                 }
 
-
             }else
             {
                 displayMessage(getBaseContext(),"Nullll");
             }
         }
-
-
-
     }
-
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -138,7 +154,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         //imageView.setImageBitmap(imageBitmap);
 
         if (requestCode == CAPTURE_IMAGE_REQUEST && resultCode == RESULT_OK) {
-            Bitmap myBitmap = BitmapFactory.decodeFile(photoFile.getAbsolutePath());
+            myBitmap = BitmapFactory.decodeFile(photoFile.getAbsolutePath());
             imageView.setImageBitmap(myBitmap);
         }
         else
@@ -146,30 +162,6 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
             displayMessage(getBaseContext(),"Request cancelled or something went wrong.");
         }
     }
-
-   /* private File createImageFile4()
-    {
-        // External sdcard location
-        File mediaStorageDir = new File(
-                Environment
-                        .getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                IMAGE_DIRECTORY_NAME);
-        // Create the storage directory if it does not exist
-        if (!mediaStorageDir.exists()) {
-            if (!mediaStorageDir.mkdirs()) {
-                displayMessage(getBaseContext(),"Unable to create directory.");
-                return null;
-            }
-        }
-
-        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss",
-                Locale.getDefault()).format(new Date());
-        File mediaFile = new File(mediaStorageDir.getPath() + File.separator
-                + "IMG_" + timeStamp + ".jpg");
-
-        return mediaFile;
-
-    }*/
 
     private File createImageFile() throws IOException {
         // Create an image file name
@@ -197,48 +189,20 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         if (requestCode == 0) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED
                     && grantResults[1] == PackageManager.PERMISSION_GRANTED) {
-                captureImage();
+                {
+
+                    // permission was granted, yay! Do the
+                    // location-related task you need to do.
+                    if (ContextCompat.checkSelfPermission(this,
+                            Manifest.permission.ACCESS_FINE_LOCATION)
+                            == PackageManager.PERMISSION_GRANTED) {
+
+                        captureImage();
+                    }
+                }
             }
         }
-
     }
-    /*protected void onActivityResult(int requestCode, int resultCode, Intent data){
-        super.onActivityResult(requestCode, resultCode, data);
-        if(resultCode == RESULT_OK){
-            if(requestCode == 1){
-                Bitmap bitmap = BitmapFactory.decodeFile(pathToFile);
-                imageView.setImageBitmap(bitmap);
-            }
-        }
-    }
-    private void dispatchPictureTakerAction(){
-        Intent takePic = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        if(takePic.resolveActivity(getPackageManager()) != null){
-            File photoFile = null;
-            photoFile = createPhotoFile();
-            if(photoFile != null){
-                pathToFile = photoFile.getAbsolutePath();
-                Uri photoURI = FileProvider.getUriForFile(MapsActivity.this, "com.example.GoogleMaps.fileprovider", photoFile);
-                takePic.putExtra(MediaStore.EXTRA_OUTPUT, photoURI);
-                startActivityForResult(takePic, 1);
-            }
-
-        }
-    }
-
-    private File createPhotoFile(){
-        String name = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
-        File image = null;
-        try{
-            image = File.createTempFile(name, ".jpg", storageDir);
-        }
-        catch(Exception e){
-            Log.d("mylog", "Excep :" + e.toString());
-        }
-        return image;
-    }*/
-
     /**
      * Manipulates the map once available.
      * This callback is triggered when the map is ready to be used.
@@ -251,10 +215,50 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
-
+        mLocationClient.getLastLocation().addOnSuccessListener(this, new OnSuccessListener<Location>() {
+            @Override
+            public void onSuccess(Location location) {
+                LatLng loc = new LatLng(location.getLatitude(), location.getLongitude());
+                mMap.moveCamera(CameraUpdateFactory.newLatLng(loc));
+                mMap.addMarker(new MarkerOptions().position(loc).title("Marker in AR"));
+            }
+        });
         // Add a marker in Sydney and move the camera
-        LatLng sydney = new LatLng(36.0822, -94.1719);
-        mMap.addMarker(new MarkerOptions().position(sydney).title("Marker in Sydney"));
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney));
+        //LatLng sydney = new LatLng(36.0822, -94.1719);
+        //mMap.addMarker(new MarkerOptions().position(sydney).title("Marker in Sydney"));
+        mMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(0,0)));
+
     }
-}
+    public static final int MY_PERMISSIONS_REQUEST_LOCATION = 99;
+    public boolean checkLocationPermission(){
+        if(ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED){
+            if(ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION)){
+               new AlertDialog.Builder(this)
+                        .setTitle(R.string.title_total_permission)
+                        .setMessage(R.string.text_location_permission)
+                        .setPositiveButton(R.string.ok, new DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(DialogInterface dialogInterface, int i) {
+                                        //Prompt the user once explanation has been shown
+                                        ActivityCompat.requestPermissions(MapsActivity.this,
+                                                new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                                                MY_PERMISSIONS_REQUEST_LOCATION);
+                                    }
+                                })
+                       .create()
+                       .show();
+            } else {
+                // No explanation needed, we can request the permission.
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                        MY_PERMISSIONS_REQUEST_LOCATION);
+            }
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+
+    }
+
